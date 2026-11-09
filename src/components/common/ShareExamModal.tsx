@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { usePortal } from '../../context/PortalContext';
-import { Share2, X, Copy, Check, MessageSquare, Mail, QrCode, ExternalLink, Download, Play, FileText, Sparkles } from 'lucide-react';
+import { Share2, X, Copy, Check, MessageSquare, Mail, QrCode, ExternalLink, Download, Play, FileText, Sparkles, AlertCircle } from 'lucide-react';
 import QRCode from 'qrcode';
 
 export const ShareExamModal: React.FC = () => {
@@ -30,20 +30,44 @@ export const ShareExamModal: React.FC = () => {
     return questions.filter(q => qIds.includes(q.id));
   }, [currentExam, questions]);
 
-  const origin = typeof window !== 'undefined' ? window.location.origin : 'https://gyansaimathsiitcenter.in';
+  const liveStudioUrl = 'https://ais-pre-f7jpkmgt4fqk7n2ogmc4x2-740969633609.asia-southeast1.run.app';
+  const currentOrigin = typeof window !== 'undefined' ? window.location.origin : liveStudioUrl;
+  const isVercelHost = currentOrigin.toLowerCase().includes('vercel.app');
+
+  // Allow switching to public studio link to bypass Vercel "You Need Access" protection
+  const [selectedDomain, setSelectedDomain] = useState<'current' | 'aistudio'>(isVercelHost ? 'aistudio' : 'current');
+
+  const activeOrigin = selectedDomain === 'aistudio' ? liveStudioUrl : currentOrigin;
   const slug = encodeURIComponent(currentExam?.code || currentExam?.id || '');
 
-  // 1. Direct CBT Test Link (Students jump immediately into the test interface)
+  // Embed essential exam metadata cleanly in URL parameters so ANY student device receives the exact paper
+  const queryParams = useMemo(() => {
+    if (!currentExam) return '';
+    const params = new URLSearchParams();
+    if (currentExam.targetClass) params.set('cls', currentExam.targetClass);
+    if (currentExam.examCategory) params.set('cat', currentExam.examCategory);
+    if (currentExam.title) params.set('title', currentExam.title);
+    if (currentExam.durationMinutes) params.set('dur', String(currentExam.durationMinutes));
+    const qIds = relevantQuestions.map(q => q.id || q.code).filter(Boolean);
+    if (qIds.length > 0) {
+      params.set('q', qIds.join(','));
+    }
+    return params.toString();
+  }, [currentExam, relevantQuestions]);
+
+  // 1. Direct CBT Test Link (Students jump directly into the test interface)
   const cbtShareUrl = useMemo(() => {
     if (!currentExam) return '';
-    return `${origin}/?cbt=${slug}`;
-  }, [origin, slug, currentExam]);
+    const extra = queryParams ? `&${queryParams}` : '';
+    return `${activeOrigin}/?cbt=${slug}${extra}`;
+  }, [activeOrigin, slug, currentExam, queryParams]);
 
   // 2. Overview / Registration Link (Students read instructions & register details)
   const overviewShareUrl = useMemo(() => {
     if (!currentExam) return '';
-    return `${origin}/?exam=${slug}`;
-  }, [origin, slug, currentExam]);
+    const extra = queryParams ? `&${queryParams}` : '';
+    return `${activeOrigin}/?exam=${slug}${extra}`;
+  }, [activeOrigin, slug, currentExam, queryParams]);
 
   const activeUrl = shareType === 'cbt' ? cbtShareUrl : overviewShareUrl;
 
@@ -208,6 +232,69 @@ export const ShareExamModal: React.FC = () => {
           {relevantQuestions.length === 0 && (
             <div className="p-2.5 bg-amber-50 border border-amber-300 rounded text-amber-900 text-[11px] flex items-center justify-between">
               <span>⚠️ <strong>Notice:</strong> This exam currently has <strong>0 questions</strong> assigned. Candidates will see an empty test. Use <strong>Manage Questions</strong> in Exam Management to add questions.</span>
+            </div>
+          )}
+
+          {/* Vercel Deployment Protection & Domain Switcher Alert */}
+          {isVercelHost ? (
+            <div className="p-3 bg-amber-50 border border-amber-300 rounded-lg text-amber-950 space-y-1.5 text-[11px]">
+              <div className="font-bold flex items-center space-x-1.5 text-amber-900">
+                <AlertCircle className="w-4 h-4 text-amber-600 shrink-0" />
+                <span>Fix Vercel "You Need Access" Screen for Students:</span>
+              </div>
+              <p className="leading-relaxed">
+                Vercel preview URLs enable <strong>Vercel Authentication</strong> by default, which displays a black "You Need Access" screen to students.
+                To allow students to open without login: Go to <strong>Vercel Dashboard → Project Settings → Deployment Protection → Turn Off "Vercel Authentication"</strong>.
+              </p>
+              <div className="pt-1 flex flex-wrap items-center gap-1.5">
+                <span className="text-gray-600 font-semibold">Active Share URL:</span>
+                <button
+                  type="button"
+                  onClick={() => setSelectedDomain('aistudio')}
+                  className={`px-2.5 py-1 rounded text-[10px] font-bold cursor-pointer transition ${
+                    selectedDomain === 'aistudio'
+                      ? 'bg-emerald-600 text-white shadow-xs'
+                      : 'bg-white border border-gray-300 text-gray-700 hover:bg-gray-50'
+                  }`}
+                >
+                  ✓ AI Studio Public URL (No Login Needed &bull; Recommended)
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setSelectedDomain('current')}
+                  className={`px-2.5 py-1 rounded text-[10px] font-bold cursor-pointer transition ${
+                    selectedDomain === 'current'
+                      ? 'bg-[#002FA7] text-white shadow-xs'
+                      : 'bg-white border border-gray-300 text-gray-700 hover:bg-gray-50'
+                  }`}
+                >
+                  Vercel App Domain
+                </button>
+              </div>
+            </div>
+          ) : (
+            <div className="flex items-center justify-between text-[11px] px-1 text-slate-500">
+              <span className="font-semibold text-slate-700">Link Domain:</span>
+              <div className="flex items-center space-x-1 font-mono">
+                <button
+                  type="button"
+                  onClick={() => setSelectedDomain('current')}
+                  className={`px-2 py-0.5 rounded text-[10px] font-bold cursor-pointer ${
+                    selectedDomain === 'current' ? 'bg-[#002FA7] text-white' : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
+                  }`}
+                >
+                  Current Domain
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setSelectedDomain('aistudio')}
+                  className={`px-2 py-0.5 rounded text-[10px] font-bold cursor-pointer ${
+                    selectedDomain === 'aistudio' ? 'bg-emerald-600 text-white' : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
+                  }`}
+                >
+                  Public Live URL
+                </button>
+              </div>
             </div>
           )}
 

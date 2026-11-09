@@ -311,9 +311,14 @@ export const StudentExamsView: React.FC = () => {
                     <button
                       type="button"
                       onClick={() => {
-                        const origin = typeof window !== 'undefined' ? window.location.origin : 'https://gyansaimathsiitcenter.in';
+                        const liveStudioUrl = 'https://ais-pre-f7jpkmgt4fqk7n2ogmc4x2-740969633609.asia-southeast1.run.app';
+                        const origin = typeof window !== 'undefined' ? window.location.origin : liveStudioUrl;
                         const slug = encodeURIComponent(ex.code || ex.id);
-                        const cbtUrl = `${origin}/?cbt=${slug}`;
+                        const qIds = (ex.sections && ex.sections.length > 0)
+                          ? ex.sections.flatMap(s => s.questionIds || [])
+                          : (ex.questions ? ex.questions.map(q => q.id) : []);
+                        const qParam = qIds.length > 0 ? `&q=${encodeURIComponent(qIds.join(','))}` : '';
+                        const cbtUrl = `${origin}/?cbt=${slug}&cls=${encodeURIComponent(ex.targetClass || '11th')}&cat=${encodeURIComponent(ex.examCategory || 'JEE')}&title=${encodeURIComponent(ex.title)}&dur=${ex.durationMinutes || 60}${qParam}`;
                         navigator.clipboard.writeText(cbtUrl);
                         showToast(`CBT Test Link for "${ex.title}" copied! Share with classmates.`);
                       }}

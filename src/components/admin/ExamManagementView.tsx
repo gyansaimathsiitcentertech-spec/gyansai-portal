@@ -722,11 +722,16 @@ export const ExamManagementView: React.FC = () => {
                       <button
                         type="button"
                         onClick={() => {
-                          const origin = typeof window !== 'undefined' ? window.location.origin : 'https://gyansaimathsiitcenter.in';
+                          const liveStudioUrl = 'https://ais-pre-f7jpkmgt4fqk7n2ogmc4x2-740969633609.asia-southeast1.run.app';
+                          const origin = typeof window !== 'undefined' ? window.location.origin : liveStudioUrl;
                           const slug = encodeURIComponent(card.code || card.id);
-                          const cbtUrl = `${origin}/?cbt=${slug}`;
+                          const qIds = (card.sections && card.sections.length > 0)
+                            ? card.sections.flatMap(s => s.questionIds || [])
+                            : (card.questions ? card.questions.map(q => q.id) : []);
+                          const qParam = qIds.length > 0 ? `&q=${encodeURIComponent(qIds.join(','))}` : '';
+                          const cbtUrl = `${origin}/?cbt=${slug}&cls=${encodeURIComponent(card.targetClass || '11th')}&cat=${encodeURIComponent(card.examCategory || 'JEE')}&title=${encodeURIComponent(card.title)}&dur=${card.durationMinutes || 60}${qParam}`;
                           navigator.clipboard.writeText(cbtUrl);
-                          showToast(`Direct CBT Test Link for "${card.title}" copied! Share with Class ${card.targetClass || '11th'} students.`);
+                          showToast(`Direct CBT Link for Class ${card.targetClass || '11th'} "${card.title}" copied!`);
                         }}
                         className="p-1.5 text-gray-500 hover:text-[#002FA7] hover:bg-blue-50 rounded border border-gray-200 cursor-pointer transition"
                         title="1-Click Copy Direct CBT Test Link"

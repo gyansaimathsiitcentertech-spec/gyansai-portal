@@ -199,7 +199,12 @@ export const StudentDashboard: React.FC = () => {
                         onClick={() => {
                           const origin = typeof window !== 'undefined' ? window.location.origin : 'https://gyansaimathsiitcenter.in';
                           const slug = encodeURIComponent(ex.code || ex.id);
-                          const cbtUrl = `${origin}/?cbt=${slug}`;
+                          const qParam = ex.questions && ex.questions.length > 0
+                            ? `&q=${encodeURIComponent(ex.questions.map((q: any) => q.id || q.code).join(','))}`
+                            : (ex.sections && ex.sections.length > 0
+                                ? `&q=${encodeURIComponent(ex.sections.flatMap((s: any) => s.questionIds).join(','))}`
+                                : '');
+                          const cbtUrl = `${origin}/?cbt=${slug}&cls=${encodeURIComponent(ex.targetClass || '11th')}&cat=${encodeURIComponent(ex.examCategory || 'JEE')}&title=${encodeURIComponent(ex.title)}&dur=${ex.durationMinutes || 60}${qParam}`;
                           navigator.clipboard.writeText(cbtUrl);
                           showToast(`Direct CBT Link for "${ex.title}" copied!`);
                         }}

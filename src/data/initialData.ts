@@ -499,42 +499,48 @@ export const INITIAL_QUESTIONS: Question[] = [
   },
   {
     id: 'q-6',
-    code: 'PHYS-ROT-006',
-    subject: 'Physics',
-    topic: 'Rotational Motion',
+    code: 'MATH-TRIG-006',
+    subject: 'Mathematics',
+    topic: 'Trigonometric Functions',
     type: 'single_choice',
     difficulty: 'Moderate',
-    questionText: 'A solid sphere and a hollow cylinder of equal mass and radius roll down an inclined plane from rest without slipping. Which reaches the bottom first?',
+    tag: '11th',
+    targetClass: '11th',
+    questionText: 'Find the exact value of the trigonometric expression: \\frac{\\cos 11^\\circ + \\sin 11^\\circ}{\\cos 11^\\circ - \\sin 11^\\circ}.',
+    formulaNote: '\\frac{\\cos \\theta + \\sin \\theta}{\\cos \\theta - \\sin \\theta} = \\tan(45^\\circ + \\theta)',
     options: [
-      { id: 'opt-1', label: 'A', text: 'Solid sphere' },
-      { id: 'opt-2', label: 'B', text: 'Hollow cylinder' },
-      { id: 'opt-3', label: 'C', text: 'Both reach simultaneously' },
-      { id: 'opt-4', label: 'D', text: 'Depends on the angle of inclination' }
+      { id: 'opt-1', label: 'A', text: '\\tan 56^\\circ' },
+      { id: 'opt-2', label: 'B', text: '\\tan 34^\\circ' },
+      { id: 'opt-3', label: 'C', text: '\\cot 56^\\circ' },
+      { id: 'opt-4', label: 'D', text: '1' }
     ],
     correctAnswer: 'A',
     marksPositive: 4,
     marksNegative: -1,
-    explanation: 'Acceleration on an incline without slipping is a = g sin(θ) / (1 + k²/R²). For a solid sphere, k²/R² = 2/5 = 0.4. For a hollow cylinder, k²/R² = 1. Smaller moment factor gives larger acceleration, so the solid sphere accelerates faster and reaches first.',
+    explanation: 'Divide numerator and denominator by \\cos 11^\\circ: \\frac{1 + \\tan 11^\\circ}{1 - \\tan 11^\\circ} = \\tan(45^\\circ + 11^\\circ) = \\tan 56^\\circ.',
     createdAt: '2024-10-14'
   },
   {
     id: 'q-7',
-    code: 'CHEM-BOND-007',
-    subject: 'Chemistry',
-    topic: 'Chemical Bonding',
+    code: 'MATH-PNC-007',
+    subject: 'Mathematics',
+    topic: 'Permutations & Combinations',
     type: 'single_choice',
-    difficulty: 'Easy',
-    questionText: 'Which of the following molecules has a square planar geometry according to VSEPR theory?',
+    difficulty: 'Moderate',
+    tag: '11th',
+    targetClass: '11th',
+    questionText: 'In how many ways can 5 boys and 5 girls be seated around a circular table such that no two girls sit together?',
+    formulaNote: 'Fix 5 boys in circular arrangement in (5-1)! = 24 ways. 5 available gaps can be filled by 5 girls in 5! = 120 ways.',
     options: [
-      { id: 'opt-1', label: 'A', text: 'XeF₄' },
-      { id: 'opt-2', label: 'B', text: 'CH₄' },
-      { id: 'opt-3', label: 'C', text: 'SF₄' },
-      { id: 'opt-4', label: 'D', text: 'BF₄⁻' }
+      { id: 'opt-1', label: 'A', text: '2,880' },
+      { id: 'opt-2', label: 'B', text: '14,400' },
+      { id: 'opt-3', label: 'C', text: '720' },
+      { id: 'opt-4', label: 'D', text: '576' }
     ],
     correctAnswer: 'A',
     marksPositive: 4,
     marksNegative: -1,
-    explanation: 'XeF₄ has 4 bond pairs and 2 lone pairs on the central Xenon atom (steric number = 6, sp³d² hybridization). The two lone pairs reside in axial positions to minimize repulsions, leaving a square planar geometry.',
+    explanation: 'First, seat the 5 boys at the round table in (5 - 1)! = 4! = 24 ways. This creates 5 distinct spaces between the boys. The 5 girls can now be seated in these 5 gaps in 5! = 120 ways. Total arrangements = 24 × 120 = 2,880.',
     createdAt: '2024-10-16'
   },
   {
@@ -643,8 +649,8 @@ export const INITIAL_EXAMS: Exam[] = [
       },
       {
         id: 'sec-2',
-        name: 'Physics & Chemistry Core Section',
-        subject: 'General Science',
+        name: 'Mathematics - Section B (Trigonometry & Combinatorics)',
+        subject: 'Mathematics',
         questionIds: ['q-6', 'q-7'],
         instructions: 'Single correct answer questions.'
       }

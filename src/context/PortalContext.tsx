@@ -527,45 +527,99 @@ export const PortalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
 
           let resolvedExamId = examParam;
 
+          // Check explicit URL parameters for class, category, title, duration, questions
+          const urlCls = urlParams.get('cls');
+          const urlCat = urlParams.get('cat');
+          const urlTitle = urlParams.get('title');
+          const urlDur = Number(urlParams.get('dur'));
+          const urlQ = urlParams.get('q');
+
           if (found) {
             resolvedExamId = found.id;
+            if (urlCls || urlTitle || urlQ) {
+              setExams(prev => prev.map(e => {
+                if (e.id === found.id) {
+                  const updated: Exam = { ...e };
+                  if (urlCls) updated.targetClass = urlCls;
+                  if (urlCat) updated.examCategory = urlCat;
+                  if (urlTitle) updated.title = decodeURIComponent(urlTitle);
+                  if (urlDur) updated.durationMinutes = urlDur;
+                  if (urlQ) {
+                    const qIds = urlQ.split(',').filter(Boolean);
+                    const matchedQs = qIds.map(id => currentQuestions.find(q => q.id === id || q.code === id)).filter(Boolean) as Question[];
+                    if (matchedQs.length > 0) {
+                      updated.questions = matchedQs;
+                      updated.sections = [{
+                        id: 'sec-1',
+                        name: `Mathematics Section (Class ${urlCls || e.targetClass || '11th'})`,
+                        subject: 'Mathematics',
+                        questionIds: matchedQs.map(q => q.id)
+                      }];
+                      updated.totalMarks = matchedQs.length * (e.positiveMarks || 4);
+                    }
+                  }
+                  return updated;
+                }
+                return e;
+              }));
+            }
           } else {
             console.log('[EXAM IDENTIFIER] Custom exam slug detected, building dynamic exam paper:', {
-              slug: examParam
+              slug: examParam,
+              urlCls,
+              urlCat,
+              urlTitle,
+              urlQ
             });
             const cleanCode = examParam.trim();
             const paramLower = cleanCode.toLowerCase();
-            const is12th = paramLower.includes('12') || paramLower.includes('xii') || paramLower.includes('calc') || paramLower.includes('integ');
-            const targetClass = is12th ? '12th' : '11th';
+            const is12th = urlCls ? urlCls.includes('12') : (paramLower.includes('12') || paramLower.includes('xii') || paramLower.includes('calc') || paramLower.includes('integ'));
+            const targetClass = urlCls || (is12th ? '12th' : '11th');
+            const targetCategory = urlCat || (paramLower.includes('cet') ? 'MHT-CET' : 'JEE');
 
-            const dynamicTitle = cleanCode.startsWith('GYAN-')
+            const dynamicTitle = urlTitle
+              ? decodeURIComponent(urlTitle)
+              : cleanCode.startsWith('GYAN-')
               ? `Gyansai Class ${targetClass} Assessment (${cleanCode})`
               : cleanCode.replace(/[-_]/g, ' ');
 
-            // Curate questions strictly matching the target class
-            const classQuestions = currentQuestions.filter(q => {
-              const qTopic = (q.topic || '').toLowerCase();
-              const qText = (q.questionText || '').toLowerCase();
-              const qTag = (q.tag || '').toLowerCase();
-              const qClass = (q.targetClass || '').toLowerCase();
+            // If specific questions were passed in URL (e.g. q=q-1,q-2,q-3)
+            let assignedQuestions: Question[] = [];
+            if (urlQ) {
+              const explicitIds = urlQ.split(',').filter(Boolean);
+              assignedQuestions = explicitIds
+                .map(id => currentQuestions.find(q => q.id === id || q.code === id))
+                .filter(Boolean) as Question[];
+            }
 
-              if (targetClass === '11th') {
-                if (qClass === '11th' || qTag.includes('11th')) return true;
-                return qTopic.includes('conic') || qTopic.includes('parabola') || qTopic.includes('vector') ||
-                       qTopic.includes('trig') || qTopic.includes('hyperbola') || qText.includes('circle') ||
-                       qTopic.includes('permutation') || qText.includes('parabola');
-              } else {
-                if (qClass === '12th' || qTag.includes('12th')) return true;
-                return qTopic.includes('integration') || qTopic.includes('calculus') || qTopic.includes('diff') ||
-                       qTopic.includes('matri') || qTopic.includes('determinant') || qTopic.includes('probability') ||
-                       qTopic.includes('area') || qText.includes('integral') || qText.includes('dy/dx');
-              }
-            });
+            // If no explicit questions, curate strictly by class assignment (11th vs 12th)
+            if (assignedQuestions.length === 0) {
+              const classQuestions = currentQuestions.filter(q => {
+                if (q.subject && q.subject.toLowerCase() !== 'mathematics') return false;
 
-            const assignedQuestions = (classQuestions.length > 0
-              ? classQuestions
-              : currentQuestions.filter(q => (q.subject || '').toLowerCase() === 'mathematics')
-            ).slice(0, 10);
+                const qTopic = (q.topic || '').toLowerCase();
+                const qText = (q.questionText || '').toLowerCase();
+                const qTag = (q.tag || '').toLowerCase();
+                const qClass = (q.targetClass || '').toLowerCase();
+
+                if (targetClass.includes('11')) {
+                  if (qClass === '11th' || qTag.includes('11th')) return true;
+                  return qTopic.includes('conic') || qTopic.includes('parabola') || qTopic.includes('vector') ||
+                         qTopic.includes('trig') || qTopic.includes('hyperbola') || qText.includes('circle') ||
+                         qTopic.includes('permutation') || qTopic.includes('pnc') || qTopic.includes('sequence');
+                } else {
+                  if (qClass === '12th' || qTag.includes('12th')) return true;
+                  return qTopic.includes('integration') || qTopic.includes('calculus') || qTopic.includes('diff') ||
+                         qTopic.includes('matri') || qTopic.includes('determinant') || qTopic.includes('probability') ||
+                         qTopic.includes('area') || qText.includes('integral') || qText.includes('dy/dx');
+                }
+              });
+
+              assignedQuestions = (classQuestions.length > 0
+                ? classQuestions
+                : currentQuestions.filter(q => (q.subject || '').toLowerCase() === 'mathematics')
+              ).slice(0, 10);
+            }
 
             const dynamicExam: Exam = {
               id: cleanCode,
@@ -574,13 +628,13 @@ export const PortalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
               folderId: is12th ? 'folder-12th' : 'folder-11th',
               folderName: is12th ? 'Class 12th Mathematics' : 'Class 11th Mathematics',
               batchIds: [],
-              durationMinutes: 180,
+              durationMinutes: urlDur || 60,
               totalMarks: assignedQuestions.length * 4 || 100,
               positiveMarks: 4,
               negativeMarks: -1,
               passPercentage: 40,
               targetClass: targetClass,
-              examCategory: 'IIT-JEE / CET',
+              examCategory: targetCategory,
               sections: [
                 {
                   id: 'sec-1',

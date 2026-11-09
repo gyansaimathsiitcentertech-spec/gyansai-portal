@@ -49,19 +49,81 @@ export const OnlineExamInterface: React.FC = () => {
   } = usePortal();
 
   const exam = useMemo(() => {
-    const raw = exams.find(
+    // 1. Try to find by ID or Code in exams array
+    let matched = exams.find(
       e => (activeExamIdForCBT && e.id.toLowerCase() === activeExamIdForCBT.toLowerCase()) ||
            (activeExamIdForCBT && e.code.toLowerCase() === activeExamIdForCBT.toLowerCase())
-    ) || exams[0];
+    );
 
-    if (!raw) return exams[0];
+    // 2. If not found by exact ID, inspect current URL parameters
+    if (!matched && typeof window !== 'undefined') {
+      const urlParams = new URLSearchParams(window.location.search);
+      const cbtCode = urlParams.get('cbt') || urlParams.get('exam');
+      const urlCls = urlParams.get('cls');
+      const urlTitle = urlParams.get('title');
+      const urlCat = urlParams.get('cat');
+      const urlQ = urlParams.get('q');
+      const urlDur = Number(urlParams.get('dur')) || 60;
+
+      if (cbtCode || urlCls || urlTitle) {
+        matched = exams.find(e =>
+          (cbtCode && (e.id.toLowerCase() === cbtCode.toLowerCase() || e.code.toLowerCase() === cbtCode.toLowerCase())) ||
+          (urlTitle && e.title.toLowerCase() === decodeURIComponent(urlTitle).toLowerCase())
+        );
+
+        if (!matched) {
+          const qIds = urlQ ? urlQ.split(',').filter(Boolean) : [];
+          const specificQuestions = qIds.map(id => questions.find(q => q.id === id || q.code === id)).filter(Boolean) as Question[];
+
+          matched = {
+            id: cbtCode || `exam-${Date.now()}`,
+            title: urlTitle ? decodeURIComponent(urlTitle) : (cbtCode ? `Assessment (${cbtCode})` : `Class ${urlCls || '11th'} Mathematics Examination`),
+            code: cbtCode || `GYAN-${Date.now().toString().slice(-4)}`,
+            folderId: 'folder-live',
+            folderName: `Class ${urlCls || '11th'} Mathematics`,
+            batchIds: [],
+            targetClass: (urlCls as any) || '11th',
+            examCategory: (urlCat as any) || 'JEE',
+            durationMinutes: urlDur,
+            totalMarks: (specificQuestions.length || 5) * 4,
+            positiveMarks: 4,
+            negativeMarks: -1,
+            passPercentage: 35,
+            questions: specificQuestions,
+            sections: [
+              {
+                id: 'sec-1',
+                name: `Mathematics Section (Class ${urlCls || '11th'})`,
+                subject: 'Mathematics',
+                questionIds: specificQuestions.map(q => q.id)
+              }
+            ],
+            startTime: new Date().toISOString(),
+            endTime: new Date(Date.now() + urlDur * 60000).toISOString(),
+            status: 'Live',
+            isPublic: true,
+            publicAccessUrl: window.location.href,
+            instructions: ['Attempt all questions. +4 for correct response, -1 for wrong response.'],
+            createdAt: new Date().toISOString()
+          };
+        }
+      }
+    }
+
+    // 3. Fallback: match by current user's target class instead of blindly picking exams[0]
+    if (!matched) {
+      const userClass = currentUser.targetExam?.includes('12') ? '12th' : '11th';
+      matched = exams.find(e => e.targetClass === userClass) || exams[0];
+    }
+
+    const raw = matched || exams[0];
 
     const safeSections = (raw.sections && raw.sections.length > 0)
       ? raw.sections
       : [
           {
             id: 'sec-1',
-            name: 'Mathematics Section',
+            name: `Mathematics Section (Class ${raw.targetClass || '11th'})`,
             subject: 'Mathematics',
             questionIds: (raw.questions || []).map(q => q.id)
           }
@@ -75,7 +137,7 @@ export const OnlineExamInterface: React.FC = () => {
       durationMinutes: raw.durationMinutes || 180,
       totalMarks: raw.totalMarks || 100
     };
-  }, [exams, activeExamIdForCBT]);
+  }, [exams, activeExamIdForCBT, currentUser.targetExam]);
 
   // Flatten questions according to sections
   const [currentSectionIndex, setCurrentSectionIndex] = useState(0);
@@ -118,6 +180,9 @@ export const OnlineExamInterface: React.FC = () => {
     const examClass = is12th ? '12th' : '11th';
 
     const classMatched = questions.filter(q => {
+      // Must be Mathematics only
+      if (q.subject && q.subject.toLowerCase() !== 'mathematics') return false;
+
       const qTopic = (q.topic || '').toLowerCase();
       const qText = (q.questionText || '').toLowerCase();
       const qTag = (q.tag || '').toLowerCase();
@@ -127,7 +192,7 @@ export const OnlineExamInterface: React.FC = () => {
         if (qTarget === '11th' || qTag.includes('11th')) return true;
         return qTopic.includes('conic') || qTopic.includes('parabola') || qTopic.includes('vector') ||
                qTopic.includes('trig') || qTopic.includes('hyperbola') || qText.includes('circle') ||
-               qTopic.includes('permutation') || qText.includes('parabola');
+               qTopic.includes('permutation') || qTopic.includes('pnc') || qTopic.includes('sequence');
       } else {
         if (qTarget === '12th' || qTag.includes('12th')) return true;
         return qTopic.includes('integration') || qTopic.includes('calculus') || qTopic.includes('diff') ||
@@ -140,7 +205,7 @@ export const OnlineExamInterface: React.FC = () => {
       return classMatched.slice(0, 10);
     }
 
-    // Fallback: Return all Mathematics questions
+    // Fallback: Return only pure Mathematics questions
     const mathOnly = questions.filter(q => (q.subject || '').toLowerCase() === 'mathematics');
     return mathOnly.length > 0 ? mathOnly.slice(0, 10) : questions.slice(0, 10);
   }, [exam, questions]);
