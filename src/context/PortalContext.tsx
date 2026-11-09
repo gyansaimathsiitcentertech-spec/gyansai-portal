@@ -241,7 +241,8 @@ export const PortalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
 
   const [portalModeState, setPortalModeState] = useState<PortalMode>(() => {
     try {
-      if (typeof window !== 'undefined' && sessionStorage.getItem('cbt_active_taking_exam')) {
+      const hasSession = typeof window !== 'undefined' && sessionStorage.getItem('cbt_active_taking_exam') && sessionStorage.getItem('cbt_active_student');
+      if (hasSession) {
         return 'taking_exam';
       }
       const path = window.location.pathname.toLowerCase();
@@ -249,11 +250,7 @@ export const PortalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       if (
         search.includes('cbt=') ||
         search.includes('mode=cbt') ||
-        path.includes('/cbt')
-      ) {
-        return 'taking_exam';
-      }
-      if (
+        path.includes('/cbt') ||
         path.includes('/exam') ||
         path.includes('/share') ||
         path.includes('/test') ||
@@ -261,7 +258,7 @@ export const PortalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         search.includes('share=') ||
         search.includes('test=')
       ) {
-        return 'public_exam';
+        return hasSession ? 'taking_exam' : 'public_exam';
       }
       const isAuth = loadFromStorage('admin_auth', false);
       if (path.includes('/admin')) {
@@ -354,7 +351,7 @@ export const PortalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
 
   // Check URL pathname & query parameters on mount and on popstate for direct shared exam landing (/exam/:id or ?exam=CODE)
   useEffect(() => {
-    const resolveUrlRoute = () => {
+    const resolveUrlRoute = async () => {
       try {
         // If candidate is actively taking an examination in CBT mode, NEVER kick them back to public_exam
         if (typeof window !== 'undefined' && sessionStorage.getItem('cbt_active_taking_exam')) {
@@ -466,46 +463,62 @@ export const PortalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         }
 
         if (examParam) {
-          // Attempt cross-device server sync first (retrieves teacher's exact exam and questions on mobile)
+          let remoteExam: Exam | null = null;
+          // Synchronously await server sync so student receives the exact questions configured by teacher
           try {
-            fetch(`/api/sync-exam?code=${encodeURIComponent(examParam)}`)
-              .then(res => res.ok ? res.json() : null)
-              .then(json => {
-                if (json && json.success && json.data) {
-                  const remoteExam: Exam = json.data;
-                  if (remoteExam.questions && remoteExam.questions.length > 0) {
-                    setQuestions(prev => {
-                      const existingIds = new Set(prev.map(q => q.id));
-                      const newOnes = (remoteExam.questions || []).filter((q: any) => !existingIds.has(q.id));
-                      return newOnes.length > 0 ? [...newOnes, ...prev] : prev;
-                    });
-                  }
-                  setExams(prev => {
-                    const idx = prev.findIndex(
-                      e => e.id.toLowerCase() === remoteExam.id.toLowerCase() ||
-                           e.code.toLowerCase() === remoteExam.code.toLowerCase()
-                    );
-                    if (idx >= 0) {
-                      const copy = [...prev];
-                      copy[idx] = { ...copy[idx], ...remoteExam };
-                      return copy;
-                    }
-                    return [remoteExam, ...prev];
-                  });
+            const res = await fetch(`/api/sync-exam?code=${encodeURIComponent(examParam)}`);
+            if (res.ok) {
+              const json = await res.json();
+              if (json && json.success && json.data) {
+                remoteExam = json.data;
+              }
+            }
+          } catch (e) {
+            console.warn('[SYNC FETCH ERROR]', e);
+          }
 
-                  if (isDirectCbt) {
-                    setActiveExamIdForCBT(remoteExam.id);
-                    setPortalModeState('taking_exam');
-                    try {
-                      sessionStorage.setItem('cbt_active_taking_exam', remoteExam.id);
-                    } catch {}
-                  } else {
-                    setActiveExamIdForShare(remoteExam.id);
-                  }
-                }
-              })
-              .catch(() => {});
-          } catch {}
+          if (remoteExam) {
+            console.log('[EXAM IDENTIFIER] Remote teacher exam retrieved from server:', {
+              id: remoteExam.id,
+              code: remoteExam.code,
+              title: remoteExam.title,
+              targetClass: remoteExam.targetClass,
+              questionsCount: remoteExam.questions?.length || 0
+            });
+
+            if (remoteExam.questions && remoteExam.questions.length > 0) {
+              const remoteQuestions = remoteExam.questions;
+              setQuestions(prev => {
+                const map = new Map(prev.map(q => [q.id, q]));
+                remoteQuestions.forEach((q: Question) => map.set(q.id, q));
+                const updated = Array.from(map.values());
+                saveToStorage('questions', updated);
+                return updated;
+              });
+            }
+
+            setExams(prev => {
+              const idx = prev.findIndex(
+                e => e.id.toLowerCase() === remoteExam!.id.toLowerCase() ||
+                     e.code.toLowerCase() === remoteExam!.code.toLowerCase()
+              );
+              let updated: Exam[];
+              if (idx >= 0) {
+                updated = [...prev];
+                updated[idx] = { ...updated[idx], ...remoteExam };
+              } else {
+                updated = [remoteExam!, ...prev];
+              }
+              saveToStorage('exams', updated);
+              return updated;
+            });
+
+            setActiveExamIdForShare(remoteExam.id);
+            setActiveExamIdForCBT(remoteExam.id);
+            // Student fills details and launches allocated CBT exam
+            setPortalModeState('public_exam');
+            return;
+          }
 
           const found = currentExams.find(
             e => e.id.toLowerCase() === examParam!.toLowerCase() ||
@@ -515,17 +528,10 @@ export const PortalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
           let resolvedExamId = examParam;
 
           if (found) {
-            console.log('[EXAM IDENTIFIER] Matched existing exam in database:', {
-              examId: found.id,
-              examCode: found.code,
-              title: found.title,
-              isDirectCbt
-            });
             resolvedExamId = found.id;
           } else {
             console.log('[EXAM IDENTIFIER] Custom exam slug detected, building dynamic exam paper:', {
-              slug: examParam,
-              isDirectCbt
+              slug: examParam
             });
             const cleanCode = examParam.trim();
             const paramLower = cleanCode.toLowerCase();
@@ -601,16 +607,9 @@ export const PortalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
             resolvedExamId = dynamicExam.id;
           }
 
-          if (isDirectCbt) {
-            setActiveExamIdForCBT(resolvedExamId);
-            setPortalModeState('taking_exam');
-            try {
-              sessionStorage.setItem('cbt_active_taking_exam', resolvedExamId);
-            } catch {}
-          } else {
-            setActiveExamIdForShare(resolvedExamId);
-            setPortalModeState('public_exam');
-          }
+          setActiveExamIdForShare(resolvedExamId);
+          setActiveExamIdForCBT(resolvedExamId);
+          setPortalModeState('public_exam');
         } else if (path.toLowerCase().startsWith('/exam')) {
           if (currentExams.length > 0) {
             setActiveExamIdForShare(currentExams[0].id);
@@ -660,6 +659,49 @@ export const PortalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     } catch {}
   }, [payments]);
   useEffect(() => { saveToStorage('admin_auth', isAdminAuthenticated); }, [isAdminAuthenticated]);
+
+  // Synchronize persisted students and exams from backend disk store on mount
+  useEffect(() => {
+    // 1. Sync remote students
+    fetch('/api/sync-student')
+      .then(res => res.json())
+      .then(json => {
+        if (json && json.success && Array.isArray(json.data) && json.data.length > 0) {
+          setUsers(prev => {
+            const map = new Map(prev.map(u => [u.id, u]));
+            json.data.forEach((stu: User) => {
+              if (stu && stu.id) {
+                map.set(stu.id, { ...(map.get(stu.id) || {}), ...stu });
+              }
+            });
+            const merged = Array.from(map.values());
+            saveToStorage('users', merged);
+            return merged;
+          });
+        }
+      })
+      .catch(() => {});
+
+    // 2. Sync remote exams
+    fetch('/api/sync-exam')
+      .then(res => res.json())
+      .then(json => {
+        if (json && json.success && Array.isArray(json.data) && json.data.length > 0) {
+          setExams(prev => {
+            const map = new Map(prev.map(e => [e.id, e]));
+            json.data.forEach((ex: Exam) => {
+              if (ex && ex.id) {
+                map.set(ex.id, { ...(map.get(ex.id) || {}), ...ex });
+              }
+            });
+            const merged = Array.from(map.values());
+            saveToStorage('exams', merged);
+            return merged;
+          });
+        }
+      })
+      .catch(() => {});
+  }, []);
 
   // Dynamically sync browser tab favicon with custom logo/favicon
   useEffect(() => {
@@ -818,22 +860,67 @@ export const PortalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   };
 
   const addExam = (eData: Omit<Exam, 'id' | 'createdAt'>): Exam => {
+    let finalQuestions = eData.questions || [];
+    if (finalQuestions.length === 0 && eData.sections && eData.sections.length > 0) {
+      const qIds = eData.sections.flatMap(s => s.questionIds || []);
+      finalQuestions = questions.filter(q => qIds.includes(q.id) || qIds.includes(q.code));
+    }
+
     const newExam: Exam = {
       ...eData,
+      questions: finalQuestions,
       id: 'exam-' + Date.now(),
       createdAt: new Date().toISOString().split('T')[0]
     };
-    setExams(prev => [newExam, ...prev]);
+    setExams(prev => {
+      const next = [newExam, ...prev];
+      saveToStorage('exams', next);
+      return next;
+    });
     // increment folder count
     if (newExam.folderId) {
       setFolders(prev => prev.map(f => f.id === newExam.folderId ? { ...f, examCount: f.examCount + 1 } : f));
     }
+    try {
+      fetch('/api/sync-exam', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(newExam)
+      }).catch(() => {});
+    } catch {}
     showToast(`Exam "${newExam.title}" created successfully!`);
     return newExam;
   };
 
   const updateExam = (id: string, data: Partial<Exam>) => {
-    setExams(prev => prev.map(e => e.id === id ? { ...e, ...data } : e));
+    setExams(prev => {
+      const next = prev.map(e => {
+        if (e.id === id) {
+          const updated = { ...e, ...data };
+          if (data.sections && (!data.questions || data.questions.length === 0)) {
+            const qIds = data.sections.flatMap(s => s.questionIds || []);
+            const attached = qIds.map(qId =>
+              questions.find(q => q.id === qId || q.code === qId) ||
+              e.questions?.find(q => q.id === qId || q.code === qId)
+            ).filter(Boolean) as Question[];
+            if (attached.length > 0) {
+              updated.questions = attached;
+            }
+          }
+          try {
+            fetch('/api/sync-exam', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify(updated)
+            }).catch(() => {});
+          } catch {}
+          return updated;
+        }
+        return e;
+      });
+      saveToStorage('exams', next);
+      return next;
+    });
     showToast('Exam updated.');
   };
 
@@ -1044,6 +1131,7 @@ export const PortalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       (genEmail && u.email && u.email.toLowerCase() === genEmail.toLowerCase())
     );
 
+    let savedUser: User;
     if (student) {
       const updatedData: Partial<User> = {
         name: cleanName || student.name,
@@ -1055,15 +1143,14 @@ export const PortalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         rollNo: data.rollNo?.trim() || student.rollNo || assignedRollNo,
         batchName: student.batchName || 'Quick Join Candidate'
       };
-      const merged: User = { ...student, ...updatedData };
+      savedUser = { ...student, ...updatedData };
       setUsers(prev => {
-        const next = prev.map(u => u.id === student!.id ? merged : u);
+        const next = prev.map(u => u.id === student!.id ? savedUser : u);
         saveToStorage('users', next);
         return next;
       });
-      return merged;
     } else {
-      const newUser: User = {
+      savedUser = {
         id: 'usr-' + Date.now(),
         name: cleanName,
         username: genUsername,
@@ -1080,12 +1167,22 @@ export const PortalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         joinedDate: new Date().toISOString().split('T')[0]
       };
       setUsers(prev => {
-        const next = [newUser, ...prev];
+        const next = [savedUser, ...prev];
         saveToStorage('users', next);
         return next;
       });
-      return newUser;
     }
+
+    // Auto-sync student to server and disk storage for Admin Dashboard
+    try {
+      fetch('/api/sync-student', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(savedUser)
+      }).catch(() => {});
+    } catch {}
+
+    return savedUser;
   };
 
   const quickJoinAndStartExam = (

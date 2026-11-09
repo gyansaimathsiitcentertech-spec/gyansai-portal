@@ -96,6 +96,69 @@ export const SharedExamLanding: React.FC = () => {
     setTimeout(() => setCopiedKey(null), 2000);
   };
 
+  const handleDirectStartAllocatedExam = (e: React.FormEvent) => {
+    e.preventDefault();
+    setErrorMsg('');
+
+    if (!fullName.trim()) {
+      setErrorMsg('Please enter your full candidate name.');
+      return;
+    }
+
+    const cleanMobile = mobile.trim().replace(/\D/g, '');
+    if (!cleanMobile || cleanMobile.length < 10) {
+      setErrorMsg('Please enter a valid 10-digit mobile number.');
+      return;
+    }
+
+    if (!collegeName.trim()) {
+      setErrorMsg('Please enter your college or school name.');
+      return;
+    }
+
+    setIsSubmitting(true);
+    const assignedRoll = rollNumber.trim() || `GMI-QJ-${Math.floor(1000 + Math.random() * 9000)}`;
+    const genUsername = `g_${cleanMobile}`;
+    const genPassword = 'gyansai123';
+    const targetExamId = currentExam ? currentExam.id : (activeExamIdForShare || exams[0]?.id);
+
+    try {
+      // 1. Auto-store student registration immediately in students database & sync to server
+      const savedStudent = registerQuickJoinStudent({
+        name: fullName.trim(),
+        phone: cleanMobile,
+        targetClass,
+        collegeName: collegeName.trim(),
+        rollNo: assignedRoll,
+        username: genUsername,
+        password: genPassword,
+        examId: targetExamId,
+        examTitle: currentExam?.title
+      });
+
+      setCredentials({
+        username: savedStudent.username || genUsername,
+        password: genPassword,
+        rollNo: savedStudent.rollNo || assignedRoll
+      });
+
+      // 2. Start allocated CBT exam directly
+      quickJoinAndStartExam(
+        fullName.trim(),
+        cleanMobile,
+        targetClass,
+        collegeName.trim(),
+        assignedRoll,
+        targetExamId
+      );
+      showToast(`Starting CBT Exam for ${fullName.trim()}!`);
+    } catch (err) {
+      console.error('Failed to start exam:', err);
+      setIsSubmitting(false);
+      setErrorMsg('Unable to launch examination. Please check details and try again.');
+    }
+  };
+
   const handleRegisterAndShowCredentials = (e: React.FormEvent) => {
     e.preventDefault();
     setErrorMsg('');
@@ -306,12 +369,12 @@ export const SharedExamLanding: React.FC = () => {
                       </h2>
                     </div>
                     <p className="text-[11px] text-blue-100 mt-1">
-                      No login required. Fill details to access the exam instantly.
+                      Enter details to start your allocated examination immediately.
                     </p>
                   </div>
 
                   {/* Form Body - Exact 5 Required Fields */}
-                  <form onSubmit={handleRegisterAndShowCredentials} className="p-5 sm:p-6 space-y-3.5 text-xs">
+                  <form onSubmit={handleDirectStartAllocatedExam} className="p-5 sm:p-6 space-y-3.5 text-xs">
                     {errorMsg && (
                       <div className="p-2.5 bg-red-50 border border-red-200 text-red-700 rounded text-xs flex items-center space-x-1.5">
                         <span className="font-bold">•</span>
@@ -319,15 +382,24 @@ export const SharedExamLanding: React.FC = () => {
                       </div>
                     )}
 
+                    {/* Allocated Exam Paper Confirmation Banner */}
+                    <div className="p-2.5 bg-blue-50/70 border border-blue-200/80 rounded flex items-center justify-between text-[11px]">
+                      <span className="text-slate-600">Assigned Paper:</span>
+                      <span className="font-bold text-[#002FA7] flex items-center space-x-1">
+                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 inline-block" />
+                        <span>Class {currentExam?.targetClass || '11th'} &bull; {questionsCount} Questions</span>
+                      </span>
+                    </div>
+
                     {/* 1. Full Name */}
                     <div>
                       <label className="block text-xs font-bold text-slate-800 mb-1">
-                        1. Full Name <span className="text-red-500">*</span>
+                        1. Candidate Full Name <span className="text-red-500">*</span>
                       </label>
                       <input
                         type="text"
                         required
-                        placeholder="Enter your full name"
+                        placeholder="Enter candidate name (e.g. Rahul Sharma)"
                         value={fullName}
                         onChange={e => {
                           setFullName(e.target.value);
@@ -351,7 +423,7 @@ export const SharedExamLanding: React.FC = () => {
                           type="tel"
                           required
                           maxLength={10}
-                          placeholder="10-digit mobile"
+                          placeholder="10-digit mobile number"
                           value={mobile}
                           onChange={e => {
                             setMobile(e.target.value);
@@ -364,9 +436,14 @@ export const SharedExamLanding: React.FC = () => {
 
                     {/* 3. Class */}
                     <div>
-                      <label className="block text-xs font-bold text-slate-800 mb-1">
-                        3. Class / Standard <span className="text-red-500">*</span>
-                      </label>
+                      <div className="flex items-center justify-between mb-1">
+                        <label className="block text-xs font-bold text-slate-800">
+                          3. Target Class / Standard <span className="text-red-500">*</span>
+                        </label>
+                        <span className="text-[10px] text-emerald-700 font-mono font-bold">
+                          Allocated: {currentExam?.targetClass || '11th'}
+                        </span>
+                      </div>
                       <select
                         value={targetClass}
                         onChange={e => setTargetClass(e.target.value as any)}
@@ -405,7 +482,7 @@ export const SharedExamLanding: React.FC = () => {
                         <label className="block text-xs font-bold text-slate-800">
                           5. Roll Number <span className="text-slate-400 font-normal">(Optional)</span>
                         </label>
-                        <span className="text-[10px] text-slate-400">Auto-generated if blank</span>
+                        <span className="text-[10px] text-slate-400">Auto-assigned if left blank</span>
                       </div>
                       <input
                         type="text"
@@ -416,19 +493,29 @@ export const SharedExamLanding: React.FC = () => {
                       />
                     </div>
 
-                    {/* Register & Continue Button */}
-                    <div className="pt-2">
+                    {/* Primary Action: Direct 1-Click Start Allocated CBT Exam */}
+                    <div className="pt-2 space-y-2">
                       <button
                         type="submit"
-                        className="w-full py-3 bg-[#002FA7] hover:bg-blue-800 active:scale-[0.99] text-white font-extrabold text-xs rounded transition flex items-center justify-center space-x-2 cursor-pointer shadow-md"
+                        disabled={isSubmitting}
+                        className="w-full py-3.5 bg-[#002FA7] hover:bg-blue-800 active:scale-[0.99] text-white font-extrabold text-sm rounded-lg transition flex items-center justify-center space-x-2 cursor-pointer shadow-md disabled:opacity-50"
                       >
-                        <span>Generate Exam Pass & Credentials</span>
-                        <ArrowRight className="w-4 h-4" />
+                        <Play className="w-4 h-4 fill-white" />
+                        <span>Start Allocated CBT Exam ({questionsCount} Qs) &rarr;</span>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={handleRegisterAndShowCredentials}
+                        className="w-full py-2 bg-slate-50 hover:bg-slate-100 text-slate-700 font-semibold text-xs border border-slate-200 rounded transition flex items-center justify-center space-x-1.5 cursor-pointer"
+                      >
+                        <KeyRound className="w-3.5 h-3.5 text-slate-500" />
+                        <span>Generate &amp; View CBT Hall Ticket Pass</span>
                       </button>
                     </div>
 
                     <p className="text-[10px] text-center text-slate-500 pt-1 leading-normal">
-                      Your examination credentials will be generated instantly for <strong className="text-slate-700">{currentExam?.title}</strong>.
+                      Clicking <strong className="text-slate-800">Start Allocated CBT Exam</strong> automatically registers your profile in the institute directory and launches your test with all {questionsCount} questions assigned by faculty.
                     </p>
                   </form>
                 </>

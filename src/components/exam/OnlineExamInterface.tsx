@@ -85,7 +85,20 @@ export const OnlineExamInterface: React.FC = () => {
   const allExamQuestions: Question[] = useMemo(() => {
     if (!exam) return [];
 
-    // Priority 1: Questions referenced by the exam's sections, synced with latest Question Bank
+    // Priority 1: Questions explicitly saved and configured on the exam object by admin
+    if (exam.questions && Array.isArray(exam.questions) && exam.questions.length > 0) {
+      return exam.questions.map(q => {
+        const fromBank = questions.find(bankQ => bankQ.id === q.id || bankQ.code === q.code);
+        return {
+          ...(fromBank || {}),
+          ...q,
+          // Ensure imageUrl from either source is preserved (exam question taking precedence)
+          imageUrl: q.imageUrl || fromBank?.imageUrl
+        };
+      });
+    }
+
+    // Priority 2: Questions referenced by the exam's sections, synced with latest Question Bank
     const sectionQuestionIds = (exam.sections && exam.sections.length > 0)
       ? exam.sections.flatMap(s => s.questionIds || [])
       : [];
@@ -97,14 +110,6 @@ export const OnlineExamInterface: React.FC = () => {
       if (matched.length > 0) {
         return matched;
       }
-    }
-
-    // Priority 2: Questions explicitly saved on the exam object, synced with latest Question Bank
-    if (exam.questions && Array.isArray(exam.questions) && exam.questions.length > 0) {
-      return exam.questions.map(q => {
-        const fromBank = questions.find(bankQ => bankQ.id === q.id || bankQ.code === q.code);
-        return fromBank || q;
-      });
     }
 
     // Priority 3: Curate strictly by class assignment (11th vs 12th)
